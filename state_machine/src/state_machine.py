@@ -8,7 +8,8 @@ import math
 import matplotlib.pyplot as plt
 import rospy
 import std_msgs.msg
-import geometry_msgs.msg
+import geometry_msgs.msg 
+from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import String
 from std_msgs.msg import Float32MultiArray
 from nav_msgs.msg import Odometry
@@ -16,15 +17,37 @@ import itertools
 import tf
 import time
 import threading
-from arduino_servo_control.srv import *
+#from arduino_servo_control.srv import *
 
 
 FLAG_GRIP = False
+FLAG_RELEASE = False
 FLAG_START = True
 FLAG_DETECT_OBJECT = False
-FLAG_FOLLOW_PATH = False
+FLAG_PATH_EXECUTION = False
+FLAG_DETECT_MISSING_WALL = False
+
+FLAG_RECEIVED = False
+
+FINAL_TARGET_X = 0.0
+FINAL_TARGET_Y = 0.0
+
+TARTGET_POSITION = [0.0, 0.0, 0.0]
+TARTGET_ORIENTATION = [0.0, 0.0, 0.0]
+
+
 pub_TARGET_POSE = rospy.Publisher('/target_pose', geometry_msgs.msg.Pose, queue_size=1)
 pub_RESET = rospy.Publisher('/odom_reset', std_msgs.msg.Bool, queue_size=1)
+pub_STOP = rospy.Publisher('/stop', std_msgs.msg.String, queue_size= 1)
+
+###########################################################
+###########################################################
+#                    State                                #
+###########################################################
+###########################################################
+
+
+
 #####################################################
 #                  Initialization                   #
 #####################################################
@@ -34,8 +57,8 @@ class Initialization(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Initialization')
-        grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
-        grip(0, 180)
+        #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
+        #grip(0, 180)
         msg = std_msgs.msg.Bool()
         msg.data = True
         pub_RESET.publish(msg)
@@ -64,43 +87,52 @@ class Standby(smach.State):
 #####################################################
 #                Look For Object                   #
 #####################################################
-class Look_For_Object(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['Detected Object'])
+# class Look_For_Object(smach.State):
+#     def __init__(self):
+#         smach.State.__init__(self, outcomes=['Detected Object'])
 
-    def execute(self, userdata):
-        global FLAG_DETECT_OBJECT
-        rospy.loginfo('Executing state Look_For_Object')
-        while not FLAG_DETECT_OBJECT:
-            pass
-        FLAG_DETECT_OBJECT = False
-        return 'Detected Object'
+#     def execute(self, userdata):
+#         global FLAG_DETECT_OBJECT
+#         rospy.loginfo('Executing state Look_For_Object')
+#         while not FLAG_DETECT_OBJECT:
+#             pass
+#         FLAG_DETECT_OBJECT = False
+#         return 'Detected Object'
 
 
 #####################################################
-#                 Follow_Path                       #
+#                 Path_Execution                       #
 #####################################################
-class Follow_Path(smach.State):
+class Path_Execution(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['Reached Gripping Target','Reached Releasing Target'])
+        smach.State.__init__(self, outcomes=['Detect Object','Reached Gripping Target','Reached Releasing Target', 'Reached Missing Wall'])
 
     def execute(self, userdata):
-        global FLAG_FOLLOW_PATH, FLAG_GRIP
-        rospy.loginfo('Executing state Follow_Path')
-        if not FLAG_GRIP:
-            target_position = [0.35, 0.0, 0.0]
-            target_orientation = [0.0, 0.0, 0.0]
-        else:
-            target_position = [-0.15, 0.0, 0.0]
-            target_orientation = [0.0, 0.0, 0.0]
-        send_message(target_position,target_orientation)
-        while not FLAG_FOLLOW_PATH:
+        global FLAG_PATH_EXECUTION, FLAG_GRIP, TARTGET_ORIENTATION, TARTGET_POSITION, FLAG_RECEIVED 
+        rospy.loginfo('Executing state Path_Execution - Plan_Path')
+        while not FLAG_RECEIVED:
             pass
-        FLAG_FOLLOW_PATH = False
+        FLAG_RECEIVED = False
+
+        send_message(TARTGET_ORIENTATION, TARTGET_POSITION)
+        rospy.loginfo('Executing state Path_Execution - Path_Following')
+
+        
+        while not FLAG_PATH_EXECUTION:
+            if FLAG_DETECT_OBJECT and not FLAG_GRIP:
+                #send Stop
+                return 'Detected Object'
+            elif FLAG_DETECT_MISSING_WALL:
+                #send stop
+                return 'Reached Missing Wall'
+            else:
+                pass
+        FLAG_PATH_EXECUTION = False
         if not FLAG_GRIP:
             return 'Reached Gripping Target'
         else:
             return 'Reached Releasing Target'
+        
 
 #####################################################
 #                 Grip_Object                       #
@@ -110,12 +142,19 @@ class Grip_Object(smach.State):
         smach.State.__init__(self, outcomes=['Gripped Object'])
 
     def execute(self, userdata):
-        global FLAG_GRIP
+        global FLAG_GRIP, TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED ,FINAL_TARGET_X, FINAL_TARGET_Y
         rospy.loginfo('Executing state Grip_Object')
         time.sleep(1)
-        grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
-        grip(60, 120)
+        #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
+        #grip(60, 120)
         time.sleep(1)
+
+        TARTGET_POSITION[0] = FINAL_TARGET_X
+        TARTGET_POSITION[1] = FINAL_TARGET_Y
+
+        FLAG_RECEIVED = True
+
+        
         FLAG_GRIP = True
         return 'Gripped Object'
 
@@ -128,11 +167,37 @@ class Release_Object(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Release_Object')
-        grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
-        grip(0, 180)
+        #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
+        #grip(0, 180)
         time.sleep(1)
         return 'Released Object'
 
+
+
+
+#####################################################
+#                   Add_Wall                        #
+#####################################################
+class Add_Wall(smach.State):
+    def __init__(self):
+        smach.State.__init__(self, outcomes=['Added Wall'])
+
+    def execute(self, userdata):
+        global FLAG_GRIP, TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED
+        rospy.loginfo('Executing state Add_Wall')
+        time.sleep(1)
+        # Rotate 180
+
+        FLAG_RECEIVED = True
+        time.sleep(1)
+        return 'Added Wall'
+
+
+###########################################################
+###########################################################
+#                        State                            #
+###########################################################
+###########################################################
 
 
 #####################################################
@@ -150,7 +215,7 @@ def send_message(target_position, target_orientation):
     pub_TARGET_POSE.publish(POSE)
 
 #####################################################
-#                  Feedback_Start                   #
+#                  start callback                   #
 #####################################################
 def start_callback(msg):
     global FLAG_START
@@ -160,25 +225,62 @@ def start_callback(msg):
         pass
 
 #####################################################
-#             /robot_odom Callback                  #
+#                    flag callback                  #
 #####################################################
 def flag_callback(msg):
-    global FLAG_DETECT_OBJECT,FLAG_FOLLOW_PATH, FLAG_GRIP, FLAG_START
+    global FLAG_DETECT_OBJECT,FLAG_PATH_EXECUTION, FLAG_GRIP, FLAG_RELEASE, FLAG_START
     flag = msg.data
     if flag == "detect_object_done" : 
         FLAG_DETECT_OBJECT = True
         #print("detect_object_done")
     elif flag == "path_following_done" :
-        FLAG_FOLLOW_PATH = True
+        FLAG_PATH_EXECUTION = True
         #print("path_following_done")
     elif flag == "grip_done":
-        pass
+        FLAG_GRIP = True
     elif flag == "release_done":
+        FLAG_RELEASE = True
+    else:
+        pass
+#####################################################
+#              object_position_callback             #
+#####################################################
+def obj_position_callback(msg):
+    global TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED
+
+    FLAG_RECEIVED = True
+        #print(msg.data) 
+        
+
+
+#####################################################
+#            wall detection callback                #
+#####################################################
+def wall_detection_callback(msg):
+    global FLAG_DETECT_MISSING_WALL
+    if msg.data:
+        FLAG_DETECT_MISSING_WALL = True
+    else:
         pass
 
-def obj_position_callback(msg):
-        #print(msg.data) 
-        pass
+
+#####################################################
+#                  goal callback                    #
+#####################################################
+def goal_callback(msg):
+    global TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED
+
+    FINAL_TARGET_X = msg.pose.position.x
+    FINAL_TARGET_Y = msg.pose.position.y
+
+    TARTGET_POSITION[0] = msg.pose.position.x
+    TARTGET_POSITION[1] = msg.pose.position.y
+
+    FLAG_RECEIVED = True
+    #print(msg.data) 
+    pass
+
+
 
 def main():
     rospy.init_node('state_machine_node')
@@ -187,11 +289,12 @@ def main():
     sm = smach.StateMachine(outcomes=['Stop'])
     sis = smach_ros.IntrospectionServer('server_name', sm, '/SM_ROOT')
     sis.start()
-    rospy.wait_for_service('/arduino_servo_control/set_servo_angles')
-    rospy.Subscriber('/Start', std_msgs.msg.Bool, start_callback)
+    #rospy.wait_for_service('/arduino_servo_control/set_servo_angles')
+    rospy.Subscriber("/Start", std_msgs.msg.Bool, start_callback)
     rospy.Subscriber("/flag_done", String, flag_callback)
     rospy.Subscriber("/object_position", Float32MultiArray, obj_position_callback)
-
+    rospy.Subscriber("/wall_detection", std_msgs.msg.Bool, wall_detection_callback)
+    rospy.Subscriber('/move_base_simple/goal', PoseStamped, goal_callback)
     # Open the container
     with sm:
         # Add states to the container
@@ -199,19 +302,25 @@ def main():
                                transitions={'Initialization Done':'Standby'})
 
         smach.StateMachine.add('Standby', Standby(), 
-                               transitions={'Receive Start Message':'Look_For_Object'})
+                               transitions={'Receive Start Message':'Path_Execution'})
 
-        smach.StateMachine.add('Look_For_Object', Look_For_Object(), 
-                               transitions={'Detected Object':'Follow_Path'})
+        # smach.StateMachine.add('Look_For_Object', Look_For_Object(), 
+        #                        transitions={'Detected Object':'Path_Execution'})
 
-        smach.StateMachine.add('Follow_Path', Follow_Path(), 
-                               transitions={'Reached Gripping Target':'Grip_Object', 'Reached Releasing Target':'Release_Object'})
+        smach.StateMachine.add('Path_Execution', Path_Execution(), 
+                               transitions={
+                               'Detect Object':'Path_Execution',
+                               'Reached Gripping Target':'Grip_Object', 
+                               'Reached Releasing Target':'Release_Object',
+                               'Reached Missing Wall':'Add_Wall'})
 
         smach.StateMachine.add('Grip_Object', Grip_Object(), 
-                               transitions={'Gripped Object':'Follow_Path'})
+                               transitions={'Gripped Object':'Path_Execution'})
                                
         smach.StateMachine.add('Release_Object', Release_Object(), 
-                               transitions={'Released Object':'Stop'})                             
+                               transitions={'Released Object':'Stop'})    
+        smach.StateMachine.add('Add_Wall', Add_Wall(), 
+                               transitions={'Added Wall':'Path_Execution'})                           
     # Execute SMACH plan
     outcome = sm.execute()
     #rospy.spin()
