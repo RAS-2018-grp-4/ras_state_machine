@@ -30,10 +30,10 @@ FLAG_DETECT_MISSING_WALL = False
 FLAG_GO_TO_OBJECT =False
 FLAG_RECEIVED = True
 
-FINAL_TARGET_X = 0.741799652576
-FINAL_TARGET_Y = 2.07628202438
+FINAL_TARGET_X = 0.302227973938
+FINAL_TARGET_Y = 2.09098625183
 
-TARTGET_POSITION = [0.741799652576, 2.07628202438, 0.0]
+TARTGET_POSITION = [0.302227973938, 2.09098625183, 0.0]
 TARTGET_ORIENTATION = [0.0, 0.0, 0.0]
 
 
@@ -59,12 +59,13 @@ class Initialization(smach.State):
     def execute(self, userdata):
         rospy.loginfo('Executing state Initialization')
         time.sleep(1)
-        grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
+        #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
         #grip(0, 180)
         time.sleep(2)
         msg = std_msgs.msg.Bool()
         msg.data = True
         pub_RESET.publish(msg)
+        time.sleep(2)
         return 'Initialization Done'
 
 
@@ -125,6 +126,7 @@ class Path_Execution(smach.State):
             if FLAG_DETECT_OBJECT and (not FLAG_GRIP) and (not FLAG_GO_TO_OBJECT):
                 #send Stop
                 FLAG_GO_TO_OBJECT = True
+                print("sop")
                 pub_STOP.publish(msg)
                 return 'Detected Object'
             elif FLAG_DETECT_MISSING_WALL:
@@ -152,8 +154,8 @@ class Grip_Object(smach.State):
         global FLAG_GRIP, TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED ,FINAL_TARGET_X, FINAL_TARGET_Y
         rospy.loginfo('Executing state Grip_Object')
         time.sleep(1)
-        grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
-        grip(60, 120)
+       #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
+        #grip(60, 120)
         time.sleep(1)
 
         TARTGET_POSITION[0] = FINAL_TARGET_X
@@ -174,8 +176,8 @@ class Release_Object(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Release_Object')
-        grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
-        grip(0, 180)
+        #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
+        #grip(0, 180)
         time.sleep(1)
         return 'Released Object'
 
@@ -242,10 +244,10 @@ def flag_callback(msg):
     #rospy.loginfo('flag')
     if flag == "detect_object_done" and FLAG_RECEIVED: 
         FLAG_DETECT_OBJECT = True
-        #print("detect_object_done")
+        print("detect_object_done")
     elif flag == "path_following_done" :
         FLAG_PATH_EXECUTION = True
-        #print("path_following_done")
+        print("path_following_done")
     elif flag == "grip_done":
         FLAG_GRIP = True
     elif flag == "release_done":
