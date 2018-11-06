@@ -18,7 +18,7 @@ import itertools
 import tf
 import time
 import math
-from arduino_servo_control.srv import *
+#from arduino_servo_control.srv import *
 
 
 FLAG_GRIP = False
@@ -40,7 +40,8 @@ TARTGET_ORIENTATION = [0.0, 0.0, 0.0]
 pub_TARGET_POSE = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
 pub_RESET = rospy.Publisher('/odom_reset', std_msgs.msg.Bool, queue_size=1)
 pub_STOP = rospy.Publisher('/path_follower_flag', std_msgs.msg.String, queue_size= 1)
-
+pub_GRIPPER = rospy.Publisher('/gripper_state', std_msgs.msg.String, queue_size= 1)
+pub_GRIPPED = rospy.Publisher('/gripped_done', std_msgs.msg.Bool, queue_size=1)
 ###########################################################
 ###########################################################
 #                    State                                #
@@ -58,10 +59,14 @@ class Initialization(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Initialization')
-        time.sleep(1)
         #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
         #grip(0, 180)
-        time.sleep(2)
+
+        msg_string = std_msgs.msg.String()
+        msg_string.data = "close"
+        pub_GRIPPER.publish(msg_string)
+
+
         msg = std_msgs.msg.Bool()
         msg.data = True
         pub_RESET.publish(msg)
@@ -156,6 +161,12 @@ class Grip_Object(smach.State):
         time.sleep(1)
        #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
         #grip(60, 120)
+        msg_string = std_msgs.msg.String()
+        msg_string.data = "grip"
+        pub_GRIPPER.publish(msg_string)
+        msg = std_msgs.msg.Bool()
+        msg.data = True
+        pub_GRIPPED.publish(msg)
         time.sleep(1)
 
         TARTGET_POSITION[0] = FINAL_TARGET_X
@@ -178,6 +189,13 @@ class Release_Object(smach.State):
         rospy.loginfo('Executing state Release_Object')
         #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
         #grip(0, 180)
+        msg_string = std_msgs.msg.String()
+        msg_string.data = "open"
+        pub_GRIPPER.publish(msg_string)
+
+        msg = std_msgs.msg.Bool()
+        msg.data = False
+        pub_GRIPPED.publish(msg)
         time.sleep(1)
         return 'Released Object'
 
@@ -244,6 +262,9 @@ def flag_callback(msg):
     #rospy.loginfo('flag')
     if flag == "detect_object_done" and FLAG_RECEIVED: 
         FLAG_DETECT_OBJECT = True
+        msg_string = std_msgs.msg.String()
+        msg_string.data = "open"
+        pub_GRIPPER.publish(msg_string)
         print("detect_object_done")
     elif flag == "path_following_done" :
         FLAG_PATH_EXECUTION = True
