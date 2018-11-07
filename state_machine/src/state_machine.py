@@ -30,10 +30,16 @@ FLAG_DETECT_MISSING_WALL = False
 FLAG_GO_TO_OBJECT =False
 FLAG_RECEIVED = True
 
-FINAL_TARGET_X = 0.302227973938
-FINAL_TARGET_Y = 2.09098625183
 
-TARTGET_POSITION = [0.302227973938, 2.09098625183, 0.0]
+
+
+#FINAL_TARGET_X = 0.302227973938
+#FINAL_TARGET_Y = 2.09098625183
+FINAL_TARGET_X = 0.9
+FINAL_TARGET_Y = 0.9
+
+#TARTGET_POSITION = [0.302227973938, 2.09098625183, 0.0]
+TARTGET_POSITION = [0.9, 0.9, 0.0]
 TARTGET_ORIENTATION = [0.0, 0.0, 0.0]
 
 
@@ -122,16 +128,20 @@ class Path_Execution(smach.State):
         while not FLAG_RECEIVED:
             pass
         FLAG_RECEIVED = False
-
+        FLAG_PATH_EXECUTION = False
+        time.sleep(3)
         send_message(TARTGET_POSITION,TARTGET_ORIENTATION)
+        
+        print(TARTGET_POSITION)
+        time.sleep(1)
         rospy.loginfo('Executing state Path_Execution - Path_Following')
         msg = std_msgs.msg.String()
         msg.data = 'STOP'
         while not FLAG_PATH_EXECUTION:
-            if FLAG_DETECT_OBJECT and (not FLAG_GRIP) and (not FLAG_GO_TO_OBJECT):
+            if (FLAG_DETECT_OBJECT) and (not FLAG_GRIP) and (not FLAG_GO_TO_OBJECT):
                 #send Stop
                 FLAG_GO_TO_OBJECT = True
-                print("sop")
+                print("stop")
                 pub_STOP.publish(msg)
                 return 'Detected Object'
             elif FLAG_DETECT_MISSING_WALL:
@@ -156,7 +166,7 @@ class Grip_Object(smach.State):
         smach.State.__init__(self, outcomes=['Gripped Object'])
 
     def execute(self, userdata):
-        global FLAG_GRIP, TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED ,FINAL_TARGET_X, FINAL_TARGET_Y
+        global FLAG_PATH_EXECUTION, FLAG_GRIP, TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED ,FINAL_TARGET_X, FINAL_TARGET_Y
         rospy.loginfo('Executing state Grip_Object')
         time.sleep(1)
        #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
@@ -167,6 +177,8 @@ class Grip_Object(smach.State):
         msg = std_msgs.msg.Bool()
         msg.data = True
         pub_GRIPPED.publish(msg)
+        FLAG_PATH_EXECUTION = False
+        FLAG_GRIP = True
         time.sleep(1)
 
         TARTGET_POSITION[0] = FINAL_TARGET_X
@@ -175,7 +187,7 @@ class Grip_Object(smach.State):
         FLAG_RECEIVED = True
 
         
-        FLAG_GRIP = True
+        
         return 'Gripped Object'
 
 #####################################################
@@ -189,10 +201,11 @@ class Release_Object(smach.State):
         rospy.loginfo('Executing state Release_Object')
         #grip = rospy.ServiceProxy('/arduino_servo_control/set_servo_angles', SetServoAngles)
         #grip(0, 180)
+        time.sleep(3)
         msg_string = std_msgs.msg.String()
         msg_string.data = "open"
         pub_GRIPPER.publish(msg_string)
-
+        
         msg = std_msgs.msg.Bool()
         msg.data = False
         pub_GRIPPED.publish(msg)
@@ -240,7 +253,7 @@ def send_message(target_position, target_orientation):
     (r, p, y, w) = tf.transformations.quaternion_from_euler(target_orientation[0], target_orientation[1], target_orientation[2])
     POSE.pose.orientation.z = y
     POSE.pose.orientation.w = w
-    #print(POSE)
+    print("send target")
     pub_TARGET_POSE.publish(POSE)
 
 #####################################################
@@ -260,17 +273,20 @@ def flag_callback(msg):
     global FLAG_RECEIVED, FLAG_GO_TO_OBJECT, FLAG_DETECT_OBJECT,FLAG_PATH_EXECUTION, FLAG_GRIP, FLAG_RELEASE, FLAG_START
     flag = msg.data
     #rospy.loginfo('flag')
-    if flag == "detect_object_done" and FLAG_RECEIVED: 
+    if flag == "detect_object_done" : 
         FLAG_DETECT_OBJECT = True
-        msg_string = std_msgs.msg.String()
-        msg_string.data = "open"
-        pub_GRIPPER.publish(msg_string)
-        print("detect_object_done")
+        if not FLAG_GRIP :
+            #print("open")
+            msg_string = std_msgs.msg.String()
+            msg_string.data = "open"
+            pub_GRIPPER.publish(msg_string)
+        #print("detect_object_done")
     elif flag == "path_following_done" :
         FLAG_PATH_EXECUTION = True
         print("path_following_done")
     elif flag == "grip_done":
-        FLAG_GRIP = True
+        #FLAG_GRIP = True
+        pass
     elif flag == "release_done":
         FLAG_RELEASE = True
     else:
@@ -279,8 +295,9 @@ def flag_callback(msg):
 #              object_position_callback             #
 #####################################################
 def obj_position_callback(msg):
-    global FLAG_GO_TO_OBJECT, TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED
-    if not math.isnan(msg.point.x):
+    global FLAG_GO_TO_OBJECT, TARTGET_POSITION, TARTGET_ORIENTATION, FLAG_RECEIVED, FLAG_GRIP
+    if not math.isnan(msg.point.x) and (not FLAG_GRIP):
+        #print("got object pose")
         TARTGET_POSITION[0] = msg.point.x
         TARTGET_POSITION[1] = msg.point.y
         FLAG_RECEIVED = True
