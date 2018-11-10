@@ -54,6 +54,16 @@ import wx
 import wx.richtext
 
 import textwrap
+########################################
+#             Robot State              #
+########################################
+class robot:
+    def __init__(self):
+        self.final_position = [0.0, 0.0, 0.0]
+        self.moving_position = [0.0, 0.0, 0.0]   # 
+        self.gripping = False                    # 
+        self.going_to_object = False 
+
 
 ## this import system (or ros-released) xdot
 # import xdot
@@ -822,7 +832,6 @@ class SmachViewerFrame(wx.Frame):
 
     def _status_msg_update(self, msg):
         """Process status messages."""
-
         # Check if we're in the process of shutting down
         if not self._keep_running:
             return
