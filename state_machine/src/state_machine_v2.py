@@ -85,6 +85,7 @@ class Path_Execution(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['Detected Object',
                                              'Reached Target',
+                                             'Reached Gripping Target',
                                              'Reached Releasing Target', 
                                              'Reached Missing Wall',
                                              'Reached Missing Rubble'],
@@ -144,22 +145,36 @@ class Path_Execution(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Path_Execution - Plan_Path')
-        userdata.robot_state.moving_position = userdata.robot_state.final_position
-        rospy.loginfo("Going to position %.2lf %.2lf", userdata.robot_state.moving_position[0], 
-                                                       userdata.robot_state.moving_position[1])
 
-
-        send_position_message(userdata.robot_state.moving_position)
 
         gripping = userdata.robot_state.gripping
+        going_to_object = userdata.robot_state.going_to_object
+
+
+        target = ""
+        if userdata.robot_state.going_to_object:
+            target = "Object"
+        else:
+            target = "Final destination"
+        rospy.loginfo("Going to %s : %.2lf %.2lf", target, 
+                                                   userdata.robot_state.moving_position[0], 
+                                                   userdata.robot_state.moving_position[1])
+        send_position_message(userdata.robot_state.moving_position)
+
 
         rospy.loginfo('Executing state Path_Execution - Path_Following')
 
         while not self.flag_path_execution:
-            if self.flag_detect_object and (not gripping) :
+            if self.flag_detect_object and (not gripping) and (not going_to_object):
                 #send Stop
                 send_stop_message()
                 send_gripper_message("open")
+                rospy.loginfo('Abort Path_Following')
+                
+                while not self.flag_object_position_received:
+                    pass
+                userdata.robot_state.moving_position = self.object_position
+
                 return 'Detected Object'
 
             elif self.flag_detect_missing_wall:
@@ -177,79 +192,12 @@ class Path_Execution(smach.State):
 
         self.flag_path_execution = False
 
-        if gripping:
-            return 'Reached Target'
-        else:
+        if going_to_object:
+            return 'Reached Gripping Target'
+        elif gripping:
             return 'Reached Releasing Target'
-            
-##########################################  
-#   State : Going_To_Position_Of_Object  #
-##########################################
-class Going_To_Position_Of_Object(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['Reached Gripping Target', 
-                                             'Reached Missing Wall',
-                                             'Reached Missing Rubble'],
-                                   input_keys=['robot_state'],
-                                   output_keys=['robot_state'])
-
-        # Ros subscriber
-        rospy.Subscriber("/flag_done", String, self.flag_callback)
-        rospy.Subscriber("/wall_detection", Bool, self.wall_detection_callback)
-
-        # flag
-        self.flag_path_execution = False                 # True when path following done
-        self.flag_detect_missing_wall = False            # True when detect missing wall
-        self.flag_detect_missing_rubble = False
-        #
-        self.object_position = [0.0, 0.0, 0.0]
-
-    # flag callback
-    def flag_callback(self, msg):
-
-        flag = msg.data
-        if flag == "detect_object_done" : 
-            pass
-        elif flag == "path_following_done" :
-            self.flag_path_execution = True
         else:
-            pass
-        
-    # wall detection 
-    def wall_detection_callback(self, msg):
-        if msg.data:
-        #    State_Machine.FLAG_DETECT_MISSING_WALL = True
-            pass
-        else:
-            pass
-
-
-    def execute(self, userdata):
-        rospy.loginfo('Executing state Going To Position Of Object - Plan_Path')
-        rospy.loginfo("Going to position %.2lf %.2lf", userdata.robot_state.moving_position[0], 
-                                                       userdata.robot_state.moving_position[1])
-        userdata.robot_state.going_to_object = True
-        send_position_message(userdata.robot_state.moving_position)
-
-
-        rospy.loginfo('Executing state Going To Position Of Object - Path_Following')
-
-        while not self.flag_path_execution:
-            if self.flag_detect_missing_wall:
-                #send stop
-                send_stop_message()
-                return 'Reached Missing Wall'
-
-            elif self.flag_detect_missing_rubble:
-                #send stop
-                send_stop_message()
-                return 'Reached Missing Rubble'
-            else:
-                pass
-
-        self.flag_path_execution = False
-
-        return 'Reached Gripping Target'
+            return 'Reached Target'           
 
 ##########################################  
 #   State :       Grip_Object            #
@@ -267,6 +215,7 @@ class Grip_Object(smach.State):
 
         userdata.robot_state.gripping = True
         userdata.robot_state.going_to_object = False
+        userdata.robot_state.moving_position = userdata.robot_state.final_position
 
         return 'Gripped Object'
 
@@ -292,8 +241,7 @@ class Release_Object(smach.State):
 ##########################################
 class Mapping_Wall(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['Mapped Wall (Druing Path Execution)',
-                                             'Mapped Wall (Druing Going To Object)'],
+        smach.State.__init__(self, outcomes=['Mapped Wall'],
                                    input_keys=['robot_state'],
                                    output_keys=['robot_state'])
 
@@ -301,18 +249,15 @@ class Mapping_Wall(smach.State):
         rospy.loginfo('Executing state Mapping_Wall')
         # Rotate 180
         rospy.sleep(1)
-        if not userdata.robot_state.going_to_object:
-            return 'Mapped Wall (Druing Path Execution)'
-        else:
-            return 'Mapped Wall (Druing Going To Object)'
+        return 'Mapped Wall'
+
 
 ##########################################  
 #   State :      Mapping_Rubble          #
 ##########################################
 class Mapping_Rubble(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['Mapped Rubble (Druing Path Execution)',
-                                             'Mapped Rubble (Druing Going To Object)'],
+        smach.State.__init__(self, outcomes=['Mapped Rubble'],
                                    input_keys=['robot_state'],
                                    output_keys=['robot_state'])
 
@@ -320,10 +265,8 @@ class Mapping_Rubble(smach.State):
         rospy.loginfo('Executing state Mapping_Rubble')
         # Rotate 180
         rospy.sleep(1)
-        if not userdata.robot_state.going_to_object:
-            return 'Mapped Rubble (Druing Path Execution)'
-        else:
-            return 'Mapped Rubble (Druing Going To Object)'
+        return 'Mapped Rubble'
+
 
 ##################################
 #       Publisher Function       #
@@ -396,21 +339,15 @@ def main():
                                            'robot_state':'robot_state'})
 
         smach.StateMachine.add('Path_Execution', Path_Execution(), 
-                               transitions={'Detected Object':'Going_To_Position_Of_Object',
+                               transitions={'Detected Object':'Path_Execution',
                                             'Reached Target':'Stop',
+                                            'Reached Gripping Target':'Grip_Object',
                                             'Reached Releasing Target':'Release_Object',
                                             'Reached Missing Wall':'Mapping_Wall',
                                             'Reached Missing Rubble':'Mapping_Rubble'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})
     
-        smach.StateMachine.add('Going_To_Position_Of_Object', Going_To_Position_Of_Object(), 
-                               transitions={'Reached Gripping Target':'Grip_Object',
-                                            'Reached Missing Wall':'Mapping_Wall',
-                                            'Reached Missing Rubble':'Mapping_Rubble'},
-                               remapping={'robot_state':'robot_state', 
-                                          'robot_state':'robot_state'})
-
         smach.StateMachine.add('Grip_Object', Grip_Object(), 
                                transitions={'Gripped Object':'Path_Execution'},
                                remapping={'robot_state':'robot_state', 
@@ -422,14 +359,12 @@ def main():
                                           'robot_state':'robot_state'})   
 
         smach.StateMachine.add('Mapping_Wall', Mapping_Wall(), 
-                               transitions={'Mapped Wall (Druing Path Execution)':'Path_Execution',
-                                            'Mapped Wall (Druing Going To Object)':'Going_To_Position_Of_Object'},
+                               transitions={'Mapped Wall':'Path_Execution'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})        
 
         smach.StateMachine.add('Mapping_Rubble', Mapping_Rubble(), 
-                               transitions={'Mapped Rubble (Druing Path Execution)':'Path_Execution',
-                                            'Mapped Rubble (Druing Going To Object)':'Going_To_Position_Of_Object'},
+                               transitions={'Mapped Rubble':'Path_Execution'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})   
 
