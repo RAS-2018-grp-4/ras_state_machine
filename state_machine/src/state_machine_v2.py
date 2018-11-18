@@ -8,6 +8,7 @@ import tf
 import math
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from std_msgs.msg import Bool
 
@@ -119,7 +120,7 @@ class Path_Execution(smach.State):
         # publisher
         self.pub_pose = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
-
+        self.pub_stop = rospy.Publisher('/path_follower_flag', String, queue_size= 1)
         # flag
         self.flag_detect_object = False                  # True when detect object
         self.flag_path_execution = False                 # True when path following done
@@ -160,8 +161,7 @@ class Path_Execution(smach.State):
         
     def wall_detection_callback(self, msg):
         if msg.data:
-        #    flag_
-            pass
+            self.flag_detect_missing_wall = True
         else:
             pass
 
@@ -190,11 +190,11 @@ class Path_Execution(smach.State):
         rospy.sleep(2)
 
     def send_stop_message(self):
-        rospy.sleep(2)
+        #rospy.sleep(2)
         msg_string = String()
-        msg_string.data = 'STOP'
-        rospy.Publisher('/path_follower_flag', String, queue_size= 1).publish(msg_string)
-        rospy.sleep(2)
+        msg_string.data = "STOP"
+        self.pub_stop.publish(msg_string)
+        rospy.sleep(5)
 
     def send_gripper_message(self,action):
         rospy.sleep(2)
@@ -342,11 +342,44 @@ class Mapping_Wall(smach.State):
         smach.State.__init__(self, outcomes=['Mapped Wall'],
                                    input_keys=['robot_state'],
                                    output_keys=['robot_state'])
+        
+        self.pub_vel = rospy.Publisher('/keyboard/vel', Twist, queue_size=1)
+
+    def rotate_180(self):
+        vel = Twist()
+        vel.linear.x = 0
+        vel.linear.y = 0.0
+        vel.linear.z = 0.0
+        vel.angular.x = 0.0
+        vel.angular.y = 0.0
+        vel.angular.z = 0.3
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+        self.pub_vel.publish(vel)
+        rospy.sleep(0.1)
+
+        vel.angular.z = 0.0
+        self.pub_vel.publish(vel)
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Mapping_Wall')
+        rospy.sleep(3)
+
         # Rotate 180
-        rospy.sleep(1)
+        self.rotate_180()
+        rospy.sleep(10)
         return 'Mapped Wall'
 
 
