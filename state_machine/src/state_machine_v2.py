@@ -77,9 +77,9 @@ class Standby(smach.State):
         #flag
         self.flag_start = True                  # True when receive start signal
 
-        # publisher
-        self.target_position = [0.9, 0.9, 0.0]
-        
+        #self.target_position = [0.9, 0.9, 0.0]
+        self.target_position = [1.3, 1.6, 0.0]
+        #self.target_position = [1.6, 0.73, 0.0]
     def start_callback(self, msg):
         if msg.data:
             self.flag_start = True
@@ -91,6 +91,8 @@ class Standby(smach.State):
         while not self.flag_start:
             pass
         self.flag_start = False
+
+        #speaker
 
         #set final destination and current moving target
         userdata.robot_state.final_position = self.target_position
@@ -142,10 +144,6 @@ class Path_Execution(smach.State):
         # when detect object
         if flag == "detect_object_done" : 
             self.flag_detect_object = True
-            # if not State_Machine.FLAG_GRIPPED :
-            #     msg_string = String()
-            #     msg_string.data = "open"
-            #     State_Machine.pub_gripper.publish(msg_string)
 
         # when reach target position
         elif flag == "path_following_done" :
@@ -167,8 +165,7 @@ class Path_Execution(smach.State):
 
     def rubber_detection_callback(self, msg):
         if msg.data:
-        #    self.flag_detect_missing_wall = True
-            pass
+            self.flag_detect_missing_wall = True
         else:
             pass
 
@@ -249,6 +246,7 @@ class Path_Execution(smach.State):
 
                 # send stop
                 self.send_stop_message()
+                self.flag_detect_missing_wall = False
                 return 'Reached Missing Wall'
                 
             elif self.flag_detect_missing_rubble:
@@ -347,39 +345,28 @@ class Mapping_Wall(smach.State):
 
     def rotate_180(self):
         vel = Twist()
-        vel.linear.x = 0
+        vel.linear.x = 0.0
         vel.linear.y = 0.0
         vel.linear.z = 0.0
         vel.angular.x = 0.0
         vel.angular.y = 0.0
+        
+        # rotate 4 sec
         vel.angular.z = 0.3
         self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
-        self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
-        self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
-        self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
-        self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
-        self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
-        self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
-        self.pub_vel.publish(vel)
-        rospy.sleep(0.1)
+        rospy.sleep(4)
 
+        # stop
         vel.angular.z = 0.0
         self.pub_vel.publish(vel)
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Mapping_Wall')
-        rospy.sleep(3)
+        rospy.sleep(1)
 
         # Rotate 180
         self.rotate_180()
-        rospy.sleep(10)
+
         return 'Mapped Wall'
 
 
