@@ -18,7 +18,7 @@ from std_msgs.msg import Bool
 ##########################################
 class robot:
     def __init__(self):
-        self.final_position = [0.0, 0.0, 0.0]
+        self.final_position = [0.2, 0.2, 0.0]
         self.moving_position = [0.0, 0.0, 0.0]   
         self.starting_position = [0.2, 0.2, 0.0] 
         self.gripping = False                   
@@ -80,7 +80,7 @@ class Standby(smach.State):
         self.flag_start = True                  # True when receive start signal
 
         #self.target_position = [0.9, 0.9, 0.0]
-        self.target_position = [1.3, 1.6, 0.0]
+        self.target_position = [0.25, 1.2, 0.0]
         #self.target_position = [1.6, 0.73, 0.0]
     def start_callback(self, msg):
         if msg.data:
@@ -99,7 +99,7 @@ class Standby(smach.State):
         #set final destination and current moving target
         userdata.robot_state.final_position = self.target_position
         userdata.robot_state.moving_position = self.target_position
-
+        userdata.robot_state.going_to_object = True
         return 'Receive Start Message'
 
 ##########################################
@@ -215,9 +215,14 @@ class Path_Execution(smach.State):
 
         # send current target position to path planner
         target = ""
-        if userdata.robot_state.going_to_object:
+        if going_to_object:
             target = "Object"
-        elif userdata.robot_state.going_to_starting_position:
+            while not self.flag_object_position_received:
+                pass
+            self.flag_object_position_received = False
+            userdata.robot_state.moving_position[0] = self.object_position[0]
+            userdata.robot_state.moving_position[1] = self.object_position[1]
+        elif going_to_starting_position:
             target = "Staring Position"
         rospy.loginfo("Going to %s : %.2lf %.2lf", target, 
                                                    userdata.robot_state.moving_position[0], 
@@ -265,7 +270,7 @@ class Grip_Object(smach.State):
 
         # publisher
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
-
+        self.pub_gripped = rospy.Publisher('/flag_gripped', String, queue_size= 1)
 
     ###############################
     #      Publisher Function     #
@@ -277,6 +282,13 @@ class Grip_Object(smach.State):
         self.pub_gripper.publish(msg_string)
         rospy.sleep(2)
 
+    def send_gripped_message(self):
+        rospy.sleep(2)
+        msg_string = String()
+        msg_string.data = "gripped"
+        self.pub_gripper.publish(msg_string)
+        rospy.sleep(2)
+
     def execute(self, userdata):
         rospy.loginfo('Executing state Grip_Object')
 
@@ -285,7 +297,8 @@ class Grip_Object(smach.State):
         userdata.robot_state.gripping = True
         userdata.robot_state.going_to_object = False
         userdata.robot_state.moving_position = userdata.robot_state.final_position
-
+        userdata.robot_state.going_to_starting_position = True
+        self.send_gripped_message()
         return 'Gripped Object'
 
 ##########################################  
@@ -326,6 +339,8 @@ class Release_Object(smach.State):
         self.send_gripper_message("open")
         self.send_object_message
         userdata.robot_state.gripping = False
+        userdata.robot_state.going_to_object = True
+        userdata.robot_state.going_to_starting_position = False
 
         return 'Released Object'
 

@@ -6,6 +6,7 @@ import smach_ros
 import rospy
 import tf
 import math
+from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import PointStamped
 from geometry_msgs.msg import Twist
@@ -19,9 +20,11 @@ from std_msgs.msg import Bool
 class robot:
     def __init__(self):
         self.final_position = [0.0, 0.0, 0.0]
-        self.moving_position = [0.0, 0.0, 0.0]    
+        self.moving_position = [0.0, 0.0, 0.0]   
+        self.starting_position = [0.2, 0.2, 0.0] 
         self.gripping = False                   
-        self.going_to_object = False             
+        self.going_to_object = False 
+        self.going_to_starting_position = False             
 
 ##########################################
 #        State : Initialization          #
@@ -78,9 +81,8 @@ class Standby(smach.State):
         self.flag_start = True                  # True when receive start signal
 
         #self.target_position = [0.9, 0.9, 0.0]
-        #self.target_position = [1.3, 1.6, 0.0]
+        self.target_position = [0.25, 1.2, 0.0]
         #self.target_position = [1.6, 0.73, 0.0]
-        self.target_position = [1.58, 2.22, 0.0]
     def start_callback(self, msg):
         if msg.data:
             self.flag_start = True
@@ -102,43 +104,56 @@ class Standby(smach.State):
         return 'Receive Start Message'
 
 ##########################################
-#         State : Path_Execution         #
+#           State : Explore              #
 ##########################################
-class Path_Execution(smach.State):
+class Explore(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['Detected Object',
-                                             'Reached Target',
-                                             'Reached Gripping Target',
-                                             'Reached Releasing Target', 
+        smach.State.__init__(self, outcomes=['Finished Path',
+                                             'Reached Missing Object',
                                              'Reached Missing Wall',
-                                             'Reached Missing Rubble'],
+                                             'Reached Missing Rubble',
+                                             'Abort_Path_Following',
+                                             'Stop Explore'],
                                    input_keys=['robot_state'],
                                    output_keys=['robot_state'])
 
         # subscriber
-        rospy.Subscriber("/object_position_map", PointStamped, self.obj_position_callback)
+        rospy.Subscriber("/best_object", PointStamped, self.obj_position_callback)
         rospy.Subscriber("/flag_done", String, self.flag_callback)
         rospy.Subscriber("/wall_detection", Bool, self.wall_detection_callback)
+        rospy.Subscriber("/next_traget",PoseStamped,self.next_traget_callback)
+        rospy.Subscriber("/flag_pathplanner", String, self.path_planner_callback)
 
         # publisher
         self.pub_pose = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
         self.pub_stop = rospy.Publisher('/path_follower_flag', String, queue_size= 1)
+
+
         # flag
         self.flag_detect_object = False                  # True when detect object
         self.flag_path_execution = False                 # True when path following done
         self.flag_detect_missing_wall = False            # True when detect missing wall
         self.flag_object_position_received = False       # True when receive object position
         self.flag_detect_missing_rubble = False          # True when detect missing rubble
-
+        self.flag_next_traget_received = False
+        self.flag_path_planner = False
         # position of object
         self.object_position = [0.0, 0.0, 0.0]
         
+        self.next_pose = [0.0,0.0,0.0]
 
 
     ###############################
     #         Callbacks           #
     ###############################
+
+    def path_planner_callback(self,msg):
+        if msg.data == "NO_PATH_FOUND":
+            self.flag_path_planner = True
+        else:
+            pass
+
     def flag_callback(self, msg):
         flag = msg.data
 
@@ -170,6 +185,10 @@ class Path_Execution(smach.State):
         else:
             pass
 
+    def next_traget_callback(self, msg):
+        self.next_pose[0] = msg.pose.position.x
+        self.next_pose[1] = msg.pose.position.y
+        self.flag_next_traget_received = True
 
     ###############################
     #      Publisher Function     #
@@ -205,49 +224,33 @@ class Path_Execution(smach.State):
     #         Execution           #
     ###############################
     def execute(self, userdata):
-        rospy.loginfo('Executing state Path_Execution - Plan_Path')
+        rospy.loginfo('Executing state Explore - Plan_Path')
 
         # get robot current state
         gripping = userdata.robot_state.gripping
         going_to_object = userdata.robot_state.going_to_object
+        going_to_starting_position = userdata.robot_state.going_to_starting_position
 
         # send current target position to path planner
-        target = ""
-        if userdata.robot_state.going_to_object:
-            target = "Object"
-        else:
-            target = "Final destination"
-        rospy.loginfo("Going to %s : %.2lf %.2lf", target, 
-                                                   userdata.robot_state.moving_position[0], 
+        rospy.loginfo("Going to : %.2lf %.2lf", userdata.robot_state.moving_position[0], 
                                                    userdata.robot_state.moving_position[1])
         self.send_position_message(userdata.robot_state.moving_position)
 
-        rospy.loginfo('Executing state Path_Execution - Path_Following')
+        rospy.loginfo('Executing state Explore - Path_Following')
 
         # when not reach target position
         while not self.flag_path_execution:
 
-            # when detect object and robot do not or going to grip object 
-            if self.flag_detect_object and (not gripping) and (not going_to_object):
 
-                # abort plan following and open gripper 
-                rospy.loginfo('Abort Path_Following')
-                self.send_stop_message()
-                self.send_gripper_message("open")
-                userdata.robot_state.going_to_object = True
-                
-                # get the position of object
-                while not self.flag_object_position_received:
-                    pass
-                userdata.robot_state.moving_position = self.object_position
-
-                return 'Detected Object'
-
-            elif self.flag_detect_missing_wall:
+            if self.flag_detect_missing_wall:
 
                 # send stop
                 self.send_stop_message()
                 self.flag_detect_missing_wall = False
+
+                # abort plan following and open gripper 
+                rospy.loginfo('Abort Path_Following')
+
                 return 'Reached Missing Wall'
                 
             elif self.flag_detect_missing_rubble:
@@ -255,83 +258,30 @@ class Path_Execution(smach.State):
                 # send stop
                 self.send_stop_message()
                 return 'Reached Missing Rubble'
+            elif self.flag_path_planner:
+                break
             else:
                 pass
             #FLAG_GO_TO_OBJECT = False
 
         self.flag_path_execution = False
-
-        if going_to_object:
-            return 'Reached Gripping Target'
-        elif gripping:
-            return 'Reached Releasing Target'
+        if self.flag_path_planner:
+            rospy.loginfo('Abort Path Planner')
+            self.flag_path_planner = False
         else:
-            return 'Reached Target'           
+            rospy.loginfo('Finished Path_Following')
 
-##########################################  
-#          State : Grip_Object           #
-##########################################
-class Grip_Object(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['Gripped Object'],
-                                   input_keys=['robot_state'],
-                                   output_keys=['robot_state'])
+        while not self.flag_next_traget_received:
+            pass
+        self.flag_next_traget_received = False
+        userdata.robot_state.moving_position[0] = self.next_pose[0]
+        userdata.robot_state.moving_position[1] = self.next_pose[1]
+        rospy.loginfo('Received Next Target')
+        if self.flag_path_planner:
+            return 'Abort_Path_Following'
+        else:
+            return 'Finished Path'           
 
-        # publisher
-        self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
-
-
-    ###############################
-    #      Publisher Function     #
-    ###############################
-    def send_gripper_message(self,action):
-        rospy.sleep(2)
-        msg_string = String()
-        msg_string.data = action
-        self.pub_gripper.publish(msg_string)
-        rospy.sleep(2)
-
-    def execute(self, userdata):
-        rospy.loginfo('Executing state Grip_Object')
-
-        self.send_gripper_message("grip")
-
-        userdata.robot_state.gripping = True
-        userdata.robot_state.going_to_object = False
-        userdata.robot_state.moving_position = userdata.robot_state.final_position
-
-        return 'Gripped Object'
-
-##########################################  
-#         State : Release_Object         #
-##########################################
-class Release_Object(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['Released Object'],
-                                   input_keys=['robot_state'],
-                                   output_keys=['robot_state'])
-
-        # publisher
-        self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
-
-
-    ###############################
-    #      Publisher Function     #
-    ###############################
-    def send_gripper_message(self,action):
-        rospy.sleep(2)
-        msg_string = String()
-        msg_string.data = action
-        self.pub_gripper.publish(msg_string)
-        rospy.sleep(2)
-
-    def execute(self, userdata):
-        rospy.loginfo('Executing state Release_Object')
-
-        self.send_gripper_message("open")
-        userdata.robot_state.gripping = False
-
-        return 'Released Object'
 
 ##########################################  
 #         State : Mapping_Wall           #
@@ -355,7 +305,7 @@ class Mapping_Wall(smach.State):
         # rotate 4 sec
         vel.angular.z = 0.3
         self.pub_vel.publish(vel)
-        rospy.sleep(4)
+        rospy.sleep(5)
 
         # stop
         vel.angular.z = 0.0
@@ -386,6 +336,23 @@ class Mapping_Rubble(smach.State):
         rospy.sleep(1)
         return 'Mapped Rubble'
 
+
+
+##########################################  
+#        State : Mapping_Object          #
+##########################################
+class Mapping_Object(smach.State):
+    def __init__(self):
+        smach.State.__init__(self, outcomes=['Mapped Object'],
+                                   input_keys=['robot_state'],
+                                   output_keys=['robot_state'])
+
+    def execute(self, userdata):
+        rospy.loginfo('Executing state Mapping_Object')
+        # Rotate 180
+        rospy.sleep(1)
+        return 'Mapped Object'
+
 ##################################
 #          Main Function         #
 ##################################
@@ -406,37 +373,32 @@ def main():
                                           'robot_state':'robot_state'})
 
         smach.StateMachine.add('Standby', Standby(), 
-                               transitions={'Receive Start Message':'Path_Execution'},
+                               transitions={'Receive Start Message':'Explore'},
                                 remapping={'robot_state':'robot_state', 
                                            'robot_state':'robot_state'})
 
-        smach.StateMachine.add('Path_Execution', Path_Execution(), 
-                               transitions={'Detected Object':'Path_Execution',
-                                            'Reached Target':'Stop',
-                                            'Reached Gripping Target':'Grip_Object',
-                                            'Reached Releasing Target':'Release_Object',
+        smach.StateMachine.add('Explore', Explore(), 
+                               transitions={'Finished Path':'Explore',
+                                            'Reached Missing Object':'Mapping_Object',
                                             'Reached Missing Wall':'Mapping_Wall',
-                                            'Reached Missing Rubble':'Mapping_Rubble'},
+                                            'Reached Missing Rubble':'Mapping_Rubble',
+                                            'Abort_Path_Following':'Explore',
+                                            'Stop Explore':'Stop'},
                                remapping={'robot_state':'robot_state', 
-                                          'robot_state':'robot_state'})
-    
-        smach.StateMachine.add('Grip_Object', Grip_Object(), 
-                               transitions={'Gripped Object':'Path_Execution'},
-                               remapping={'robot_state':'robot_state', 
-                                          'robot_state':'robot_state'})
-                               
-        smach.StateMachine.add('Release_Object', Release_Object(), 
-                               transitions={'Released Object':'Stop'},
-                               remapping={'robot_state':'robot_state', 
-                                          'robot_state':'robot_state'})   
+                                          'robot_state':'robot_state'})  
 
         smach.StateMachine.add('Mapping_Wall', Mapping_Wall(), 
-                               transitions={'Mapped Wall':'Path_Execution'},
+                               transitions={'Mapped Wall':'Explore'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})        
 
+        smach.StateMachine.add('Mapping_Object', Mapping_Object(), 
+                               transitions={'Mapped Object':'Explore'},
+                               remapping={'robot_state':'robot_state', 
+                                          'robot_state':'robot_state'}) 
+
         smach.StateMachine.add('Mapping_Rubble', Mapping_Rubble(), 
-                               transitions={'Mapped Rubble':'Path_Execution'},
+                               transitions={'Mapped Rubble':'Explore'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})   
 
