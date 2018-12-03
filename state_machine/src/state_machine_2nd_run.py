@@ -272,7 +272,8 @@ class Path_Execution(smach.State):
                 pass
 
             if self.flag_close_to_object:
-                self.flag_close_to_object
+                self.flag_close_to_object = False
+                print("open")
                 self.send_gripper_message('open')
             #FLAG_GO_TO_OBJECT = False
 
@@ -302,17 +303,17 @@ class Grip_Object(smach.State):
     #      Publisher Function     #
     ###############################
     def send_gripper_message(self,action):
-        rospy.sleep(2)
+        #rospy.sleep(2)
         msg_string = String()
         msg_string.data = action
         self.pub_gripper.publish(msg_string)
         rospy.sleep(2)
 
     def send_gripped_message(self):
-        rospy.sleep(2)
+        #rospy.sleep(2)
         msg_string = String()
         msg_string.data = "gripped"
-        self.pub_gripper.publish(msg_string)
+        self.pub_gripped.publish(msg_string)
         rospy.sleep(2)
 
     def execute(self, userdata):
