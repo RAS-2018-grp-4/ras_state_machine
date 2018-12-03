@@ -23,6 +23,7 @@ class robot:
         self.starting_position = [0.2, 0.2, 0.0] 
         self.gripping = False                   
         self.going_to_object = False 
+        self.clos_to_object = False
         self.going_to_starting_position = False             
 
 ##########################################
@@ -117,8 +118,10 @@ class Path_Execution(smach.State):
         # subscriber
         rospy.Subscriber("/best_object", PointStamped, self.obj_position_callback)
         rospy.Subscriber("/flag_done", String, self.flag_callback)
+        rospy.Subscriber("/flag_path_follower", String, self.flag_path_callback)
         rospy.Subscriber("/wall_detection", Bool, self.wall_detection_callback)
-
+        #rospy.Subscriber("/wall_detection", Bool, self.wall_detection_callback)
+        self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
         # publisher
         self.pub_pose = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
@@ -131,9 +134,11 @@ class Path_Execution(smach.State):
         self.flag_detect_missing_wall = False            # True when detect missing wall
         self.flag_object_position_received = False       # True when receive object position
         self.flag_detect_missing_rubble = False          # True when detect missing rubble
-
+        self.flag_close_to_object = False
         # position of object
         self.object_position = [0.0, 0.0, 0.0]
+        
+
         
 
 
@@ -152,6 +157,14 @@ class Path_Execution(smach.State):
             self.flag_path_execution = True
         else:
             pass
+
+
+    def flag_path_callback(self, msg):
+        flag = msg.data
+        # when detect object
+        if flag == "CLOSE_TO_TARGET" : 
+            self.flag_close_to_object = True
+
 
     def obj_position_callback(self, msg):
         if not math.isnan(msg.point.x):
@@ -175,6 +188,13 @@ class Path_Execution(smach.State):
     ###############################
     #      Publisher Function     #
     ###############################
+    def send_gripper_message(self,action):
+        rospy.sleep(2)
+        msg_string = String()
+        msg_string.data = action
+        self.pub_gripper.publish(msg_string)
+        rospy.sleep(2)
+
     def send_position_message(self, target_position):
         rospy.sleep(2)
         pose = PoseStamped()
@@ -224,6 +244,8 @@ class Path_Execution(smach.State):
             userdata.robot_state.moving_position[1] = self.object_position[1]
         elif going_to_starting_position:
             target = "Staring Position"
+            userdata.robot_state.moving_position[0] = userdata.robot_state.starting_position[0]
+            userdata.robot_state.moving_position[1] = userdata.robot_state.starting_position[1]
         rospy.loginfo("Going to %s : %.2lf %.2lf", target, 
                                                    userdata.robot_state.moving_position[0], 
                                                    userdata.robot_state.moving_position[1])
@@ -248,6 +270,10 @@ class Path_Execution(smach.State):
                 return 'Reached Missing Rubble'
             else:
                 pass
+
+            if self.flag_close_to_object:
+                self.flag_close_to_object
+                self.send_gripper_message('open')
             #FLAG_GO_TO_OBJECT = False
 
         self.flag_path_execution = False
@@ -313,6 +339,7 @@ class Release_Object(smach.State):
         # publisher
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
         self.pub_obj_done = rospy.Publisher('/object_done', String, queue_size= 1)
+        self.pub_vel = rospy.Publisher('/keyboard/vel', Twist, queue_size=1)
 
     ###############################
     #      Publisher Function     #
@@ -332,6 +359,23 @@ class Release_Object(smach.State):
         rospy.sleep(5)
 
 
+    def back(self):
+            vel = Twist()
+            vel.linear.x = -0.02
+            vel.linear.y = 0.0
+            vel.linear.z = 0.0
+            vel.angular.x = 0.0
+            vel.angular.y = 0.0
+        
+            # rotate
+            vel.angular.z = 0.0
+            self.pub_vel.publish(vel)
+            rospy.loginfo('Rotating')
+            rospy.sleep(4)
+            rospy.loginfo('Rotate Finished')
+            # stop
+            vel.angular.z = 0.0
+            self.pub_vel.publish(vel)
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Release_Object')
@@ -341,7 +385,7 @@ class Release_Object(smach.State):
         userdata.robot_state.gripping = False
         userdata.robot_state.going_to_object = True
         userdata.robot_state.going_to_starting_position = False
-
+        self.back()
         return 'Released Object'
 
 ##########################################  
@@ -435,7 +479,7 @@ def main():
                                           'robot_state':'robot_state'})
                                
         smach.StateMachine.add('Release_Object', Release_Object(), 
-                               transitions={'Released Object':'Stop'},
+                               transitions={'Released Object':'Path_Execution'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})   
 

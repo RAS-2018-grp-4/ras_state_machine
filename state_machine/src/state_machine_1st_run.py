@@ -45,25 +45,25 @@ class Initialization(smach.State):
     #      Publisher Function     #
     ###############################
     def send_disable_message(self,msg_str):
-        rospy.sleep(1)
+        #rospy.sleep(1)
         msg_string = String()
         msg_string.data = msg_str
         self.pub_wall_disable.publish(msg_string)
       
     def send_reset_message(self):
-        rospy.sleep(2)
+        #rospy.sleep(2)
         msg_bool = Bool()
         msg_bool.data = True
         self.pub_reset.publish(msg_bool)
-        rospy.sleep(2)
+        rospy.sleep(0.5)
 
     def send_gripper_message(self,action):
-        rospy.sleep(2)
+        #rospy.sleep(2)
         msg_string = String()
         msg_string.data = action
 
         self.pub_gripper.publish(msg_string)
-        rospy.sleep(2)
+        #rospy.sleep(2)
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Initialization')
@@ -228,7 +228,7 @@ class Explore(smach.State):
     #      Publisher Function     #
     ###############################
     def send_position_message(self, target_position):
-        rospy.sleep(2)
+        #rospy.sleep(2)
         pose = PoseStamped()
         pose.header.frame_id = 'map'
         pose.pose.position.x = target_position[0]
@@ -238,17 +238,17 @@ class Explore(smach.State):
         pose.pose.orientation.z = y
         pose.pose.orientation.w = w
         self.pub_pose.publish(pose)
-        rospy.sleep(2)
+        rospy.sleep(0.5)
 
     def send_stop_message(self):
         #rospy.sleep(2)
         msg_string = String()
         msg_string.data = "STOP"
         self.pub_stop.publish(msg_string)
-        rospy.sleep(5)
+        #rospy.sleep(1)
 
     def send_gripper_message(self,action):
-        rospy.sleep(2)
+        #rospy.sleep(2)
         msg_string = String()
         msg_string.data = action
         self.pub_gripper.publish(msg_string)
@@ -368,11 +368,11 @@ class Rotate(smach.State):
 
 
     def send_disable_message(self,msg_str):
-        rospy.sleep(1)
+        #rospy.sleep(1)
         msg_string = String()
         msg_string.data = msg_str
         self.pub_wall_disable.publish(msg_string)
-        rospy.sleep(2)
+        #rospy.sleep(2)
     def rotate(self):
             vel = Twist()
             vel.linear.x = 0.0
@@ -382,7 +382,7 @@ class Rotate(smach.State):
             vel.angular.y = 0.0
         
             # rotate
-            vel.angular.z = 0.3
+            vel.angular.z = 0.22
             self.pub_vel.publish(vel)
             rospy.loginfo('Rotating')
             rospy.sleep(10)
