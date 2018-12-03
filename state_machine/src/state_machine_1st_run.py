@@ -38,10 +38,18 @@ class Initialization(smach.State):
         # publisher
         self.pub_reset = rospy.Publisher('/odom_reset', Bool, queue_size=1)
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
+        self.pub_wall_disable = rospy.Publisher('/wall_disable', String, queue_size=1)
+
 
     ###############################
     #      Publisher Function     #
-    ###############################       
+    ###############################
+    def send_disable_message(self,msg_str):
+        rospy.sleep(1)
+        msg_string = String()
+        msg_string.data = msg_str
+        self.pub_wall_disable.publish(msg_string)
+      
     def send_reset_message(self):
         rospy.sleep(2)
         msg_bool = Bool()
@@ -61,7 +69,7 @@ class Initialization(smach.State):
         rospy.loginfo('Executing state Initialization')
 
         self.send_gripper_message("close")
-
+        self.send_disable_message("able")
         self.send_reset_message()
 
         return 'Initialization Done'
