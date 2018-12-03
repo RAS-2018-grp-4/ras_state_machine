@@ -53,6 +53,7 @@ class Initialization(smach.State):
         rospy.sleep(2)
         msg_string = String()
         msg_string.data = action
+
         self.pub_gripper.publish(msg_string)
         rospy.sleep(2)
 
@@ -111,7 +112,7 @@ class Explore(smach.State):
         smach.State.__init__(self, outcomes=['Finished Path',
                                              'Reached Missing Object',
                                              'Reached Missing Wall',
-                                             'Reached Missing Rubble',
+                                             'Reached Missing Battery',
                                              'Abort_Path_Following',
                                              'Stop Explore'],
                                    input_keys=['robot_state'],
@@ -123,11 +124,13 @@ class Explore(smach.State):
         rospy.Subscriber("/wall_detection", Bool, self.wall_detection_callback)
         rospy.Subscriber("/next_traget",PoseStamped,self.next_traget_callback)
         rospy.Subscriber("/flag_pathplanner", String, self.path_planner_callback)
+        rospy.Subscriber("/battery_detected", String, self.battery_callback)
 
         # publisher
         self.pub_pose = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
         self.pub_stop = rospy.Publisher('/path_follower_flag', String, queue_size= 1)
+        self.pub_vel = rospy.Publisher('/keyboard/vel', Twist, queue_size=1)
 
 
         # flag
@@ -135,9 +138,10 @@ class Explore(smach.State):
         self.flag_path_execution = False                 # True when path following done
         self.flag_detect_missing_wall = False            # True when detect missing wall
         self.flag_object_position_received = False       # True when receive object position
-        self.flag_detect_missing_rubble = False          # True when detect missing rubble
         self.flag_next_traget_received = False
         self.flag_path_planner = False
+        self.flag_battery_detected = False
+
         # position of object
         self.object_position = [0.0, 0.0, 0.0]
         
@@ -147,6 +151,12 @@ class Explore(smach.State):
     ###############################
     #         Callbacks           #
     ###############################
+    def battery_callback(self,msg):
+        if msg.data == "BATTERY_DETECTED":
+            self.flag_battery_detected = True
+        else:
+            pass
+
 
     def path_planner_callback(self,msg):
         if msg.data == "NO_PATH_FOUND":
@@ -179,11 +189,6 @@ class Explore(smach.State):
         else:
             pass
 
-    def rubber_detection_callback(self, msg):
-        if msg.data:
-            self.flag_detect_missing_wall = True
-        else:
-            pass
 
     def next_traget_callback(self, msg):
         self.next_pose[0] = msg.pose.position.x
@@ -220,6 +225,25 @@ class Explore(smach.State):
         self.pub_gripper.publish(msg_string)
         rospy.sleep(2)
 
+    def rotate(self):
+            vel = Twist()
+            vel.linear.x = 0.0
+            vel.linear.y = 0.0
+            vel.linear.z = 0.0
+            vel.angular.x = 0.0
+            vel.angular.y = 0.0
+        
+            # rotate
+            vel.angular.z = 0.3
+            self.pub_vel.publish(vel)
+            rospy.loginfo('Rotating')
+            rospy.sleep(5)
+            rospy.loginfo('Rotate Finished')
+            # stop
+            vel.angular.z = 0.0
+            self.pub_vel.publish(vel)
+
+
     ###############################
     #         Execution           #
     ###############################
@@ -252,13 +276,20 @@ class Explore(smach.State):
                 rospy.loginfo('Abort Path_Following')
 
                 return 'Reached Missing Wall'
+            else:
+                pass
+            
                 
-            elif self.flag_detect_missing_rubble:
-
+            if self.flag_battery_detected:
+                self.flag_battery_detected = False
                 # send stop
                 self.send_stop_message()
-                return 'Reached Missing Rubble'
-            elif self.flag_path_planner:
+                rospy.loginfo('Abort Path_Following')
+                return 'Reached Missing Battery'
+            else:
+                pass
+
+            if self.flag_path_planner:
                 break
             else:
                 pass
@@ -280,6 +311,7 @@ class Explore(smach.State):
         if self.flag_path_planner:
             return 'Abort_Path_Following'
         else:
+            
             return 'Finished Path'           
 
 
@@ -292,49 +324,31 @@ class Mapping_Wall(smach.State):
                                    input_keys=['robot_state'],
                                    output_keys=['robot_state'])
         
-        self.pub_vel = rospy.Publisher('/keyboard/vel', Twist, queue_size=1)
-
-    def rotate_180(self):
-        vel = Twist()
-        vel.linear.x = 0.0
-        vel.linear.y = 0.0
-        vel.linear.z = 0.0
-        vel.angular.x = 0.0
-        vel.angular.y = 0.0
-        
-        # rotate 4 sec
-        vel.angular.z = 0.3
-        self.pub_vel.publish(vel)
-        rospy.sleep(5)
-
-        # stop
-        vel.angular.z = 0.0
-        self.pub_vel.publish(vel)
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Mapping_Wall')
-        rospy.sleep(1)
+        rospy.sleep(8)
 
         # Rotate 180
-        self.rotate_180()
+        #self.rotate_180()
 
         return 'Mapped Wall'
 
 
 ##########################################  
-#        State : Mapping_Rubble          #
+#        State : Mapping_Battery          #
 ##########################################
-class Mapping_Rubble(smach.State):
+class Mapping_Battery(smach.State):
     def __init__(self):
-        smach.State.__init__(self, outcomes=['Mapped Rubble'],
+        smach.State.__init__(self, outcomes=['Mapped Battery'],
                                    input_keys=['robot_state'],
                                    output_keys=['robot_state'])
 
     def execute(self, userdata):
-        rospy.loginfo('Executing state Mapping_Rubble')
+        rospy.loginfo('Executing state Mapping_Battery')
         # Rotate 180
         rospy.sleep(1)
-        return 'Mapped Rubble'
+        return 'Mapped Battery'
 
 
 
@@ -381,7 +395,7 @@ def main():
                                transitions={'Finished Path':'Explore',
                                             'Reached Missing Object':'Mapping_Object',
                                             'Reached Missing Wall':'Mapping_Wall',
-                                            'Reached Missing Rubble':'Mapping_Rubble',
+                                            'Reached Missing Battery':'Mapping_Battery',
                                             'Abort_Path_Following':'Explore',
                                             'Stop Explore':'Stop'},
                                remapping={'robot_state':'robot_state', 
@@ -397,8 +411,8 @@ def main():
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'}) 
 
-        smach.StateMachine.add('Mapping_Rubble', Mapping_Rubble(), 
-                               transitions={'Mapped Rubble':'Explore'},
+        smach.StateMachine.add('Mapping_Battery', Mapping_Battery(), 
+                               transitions={'Mapped Battery':'Explore'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})   
 
