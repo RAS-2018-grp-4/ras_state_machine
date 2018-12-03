@@ -353,11 +353,18 @@ class Rotate(smach.State):
 
         # publisher
         self.pub_vel = rospy.Publisher('/keyboard/vel', Twist, queue_size=1)
-
+        self.pub_wall_disable = rospy.Publisher('/wall_disable', String, queue_size=1)
     ###############################
     #      Publisher Function     #
     ###############################
 
+
+    def send_disable_message(self,msg_str):
+        rospy.sleep(1)
+        msg_string = String()
+        msg_string.data = msg_str
+        self.pub_wall_disable.publish(msg_string)
+        rospy.sleep(2)
     def rotate(self):
             vel = Twist()
             vel.linear.x = 0.0
@@ -370,7 +377,7 @@ class Rotate(smach.State):
             vel.angular.z = 0.3
             self.pub_vel.publish(vel)
             rospy.loginfo('Rotating')
-            rospy.sleep(5)
+            rospy.sleep(10)
             rospy.loginfo('Rotate Finished')
             # stop
             vel.angular.z = 0.0
@@ -378,7 +385,9 @@ class Rotate(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Rotate')
+        self.send_disable_message("disable")
         self.rotate()
+        self.send_disable_message("able")
         return 'Rotate Finish'
 
 
