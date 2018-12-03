@@ -12,7 +12,7 @@ from geometry_msgs.msg import PointStamped
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from std_msgs.msg import Bool
-
+from sensor_msgs.msg import LaserScan
 
 ##########################################
 #              Robot State               #
@@ -114,7 +114,8 @@ class Explore(smach.State):
                                              'Reached Missing Wall',
                                              'Reached Missing Battery',
                                              'Abort_Path_Following',
-                                             'Stop Explore'],
+                                             'Stop Explore',
+                                             'Start Rotate'],
                                    input_keys=['robot_state'],
                                    output_keys=['robot_state'])
 
@@ -125,6 +126,7 @@ class Explore(smach.State):
         rospy.Subscriber("/next_traget",PoseStamped,self.next_traget_callback)
         rospy.Subscriber("/flag_pathplanner", String, self.path_planner_callback)
         rospy.Subscriber("/battery_detected", String, self.battery_callback)
+        rospy.Subscriber('/scan', LaserScan, self.laser_callback)
 
         # publisher
         self.pub_pose = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
@@ -141,6 +143,8 @@ class Explore(smach.State):
         self.flag_next_traget_received = False
         self.flag_path_planner = False
         self.flag_battery_detected = False
+        self.flag_empty = False
+
 
         # position of object
         self.object_position = [0.0, 0.0, 0.0]
@@ -195,6 +199,23 @@ class Explore(smach.State):
         self.next_pose[1] = msg.pose.position.y
         self.flag_next_traget_received = True
 
+    def laser_callback(self,scan):
+        count = (int)(scan.scan_time / scan.time_increment)
+        num = 0
+        sum = 0.0
+        flag = True
+        for i in range(0, count):
+            if scan.ranges[i] !=float("inf"):
+                sum = sum + scan.ranges[i]
+                num = num + 1
+                if scan.ranges[i]< 0.25:
+                    flag = False
+                    break
+
+        if sum/num > 0.4 and flag:
+            self.flag_empty = True
+        else:
+            self.flag_empty = False  
     ###############################
     #      Publisher Function     #
     ###############################
@@ -237,7 +258,7 @@ class Explore(smach.State):
             vel.angular.z = 0.3
             self.pub_vel.publish(vel)
             rospy.loginfo('Rotating')
-            rospy.sleep(5)
+            rospy.sleep(10)
             rospy.loginfo('Rotate Finished')
             # stop
             vel.angular.z = 0.0
@@ -295,6 +316,12 @@ class Explore(smach.State):
                 pass
             #FLAG_GO_TO_OBJECT = False
 
+
+            #if self.flag_empty:
+            #    self.flag_empty = False
+            #    self.send_stop_message()
+            #    return 'Start Rotate'
+
         self.flag_path_execution = False
         if self.flag_path_planner:
             rospy.loginfo('Abort Path Planner')
@@ -311,8 +338,48 @@ class Explore(smach.State):
         if self.flag_path_planner:
             return 'Abort_Path_Following'
         else:
-            
             return 'Finished Path'           
+
+
+
+##########################################  
+#          State : Rotate               #
+##########################################
+class Rotate(smach.State):
+    def __init__(self):
+        smach.State.__init__(self, outcomes=['Rotate Finish'],
+                                   input_keys=['robot_state'],
+                                   output_keys=['robot_state'])
+
+        # publisher
+        self.pub_vel = rospy.Publisher('/keyboard/vel', Twist, queue_size=1)
+
+    ###############################
+    #      Publisher Function     #
+    ###############################
+
+    def rotate(self):
+            vel = Twist()
+            vel.linear.x = 0.0
+            vel.linear.y = 0.0
+            vel.linear.z = 0.0
+            vel.angular.x = 0.0
+            vel.angular.y = 0.0
+        
+            # rotate
+            vel.angular.z = 0.3
+            self.pub_vel.publish(vel)
+            rospy.loginfo('Rotating')
+            rospy.sleep(5)
+            rospy.loginfo('Rotate Finished')
+            # stop
+            vel.angular.z = 0.0
+            self.pub_vel.publish(vel)
+
+    def execute(self, userdata):
+        rospy.loginfo('Executing state Rotate')
+        self.rotate()
+        return 'Rotate Finish'
 
 
 ##########################################  
@@ -392,12 +459,17 @@ def main():
                                            'robot_state':'robot_state'})
 
         smach.StateMachine.add('Explore', Explore(), 
-                               transitions={'Finished Path':'Explore',
+                               transitions={'Finished Path':'Rotate',
                                             'Reached Missing Object':'Mapping_Object',
                                             'Reached Missing Wall':'Mapping_Wall',
                                             'Reached Missing Battery':'Mapping_Battery',
                                             'Abort_Path_Following':'Explore',
+                                            'Start Rotate':'Rotate',
                                             'Stop Explore':'Stop'},
+                               remapping={'robot_state':'robot_state', 
+                                          'robot_state':'robot_state'})  
+        smach.StateMachine.add('Rotate', Rotate(), 
+                               transitions={'Rotate Finish':'Explore'},
                                remapping={'robot_state':'robot_state', 
                                           'robot_state':'robot_state'})  
 
