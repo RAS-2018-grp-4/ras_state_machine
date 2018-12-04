@@ -90,7 +90,7 @@ class Standby(smach.State):
         self.flag_start = True                  # True when receive start signal
 
         #self.target_position = [0.9, 0.9, 0.0]
-        self.target_position = [0.25, 1.2, 0.0]
+        self.target_position = [rospy.get_param("/t1x"), rospy.get_param("/t1y"), 0.0]
         #self.target_position = [1.6, 0.73, 0.0]
     def start_callback(self, msg):
         if msg.data:
@@ -382,7 +382,7 @@ class Rotate(smach.State):
             vel.angular.y = 0.0
         
             # rotate
-            vel.angular.z = 0.22
+            vel.angular.z = 0.20
             self.pub_vel.publish(vel)
             rospy.loginfo('Rotating')
             rospy.sleep(10)
