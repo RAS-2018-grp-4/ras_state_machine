@@ -162,7 +162,8 @@ class Path_Execution(smach.State):
     def flag_path_callback(self, msg):
         flag = msg.data
         # when detect object
-        if flag == "CLOSE_TO_TARGET" : 
+        if flag == "CLOSE_TO_TARGET" :
+            print("close") 
             self.flag_close_to_object = True
 
 
