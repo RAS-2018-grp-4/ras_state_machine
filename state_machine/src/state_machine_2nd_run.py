@@ -121,8 +121,8 @@ class Path_Execution(smach.State):
         rospy.Subscriber("/flag_path_follower", String, self.flag_path_callback)
         rospy.Subscriber("/wall_detection", Bool, self.wall_detection_callback)
         #rospy.Subscriber("/wall_detection", Bool, self.wall_detection_callback)
-        self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
-        # publisher
+    
+          # publisher
         self.pub_pose = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
         self.pub_gripper = rospy.Publisher('/gripper_state', String, queue_size= 1)
         self.pub_stop = rospy.Publisher('/path_follower_flag', String, queue_size= 1)
@@ -163,7 +163,7 @@ class Path_Execution(smach.State):
         flag = msg.data
         # when detect object
         if flag == "CLOSE_TO_TARGET" :
-            print("close") 
+            print("received close to target")
             self.flag_close_to_object = True
 
 
@@ -216,12 +216,6 @@ class Path_Execution(smach.State):
         self.pub_stop.publish(msg_string)
         rospy.sleep(5)
 
-    def send_gripper_message(self,action):
-        rospy.sleep(2)
-        msg_string = String()
-        msg_string.data = action
-        self.pub_gripper.publish(msg_string)
-        rospy.sleep(2)
 
     ###############################
     #         Execution           #
@@ -243,6 +237,7 @@ class Path_Execution(smach.State):
             self.flag_object_position_received = False
             userdata.robot_state.moving_position[0] = self.object_position[0]
             userdata.robot_state.moving_position[1] = self.object_position[1]
+            self.send_gripper_message("close")
         elif going_to_starting_position:
             target = "Staring Position"
             userdata.robot_state.moving_position[0] = userdata.robot_state.starting_position[0]
@@ -272,7 +267,7 @@ class Path_Execution(smach.State):
             else:
                 pass
 
-            if self.flag_close_to_object:
+            if self.flag_close_to_object and going_to_object and not going_to_starting_position:
                 self.flag_close_to_object = False
                 print("open")
                 self.send_gripper_message('open')
@@ -283,6 +278,7 @@ class Path_Execution(smach.State):
         if going_to_object:
             return 'Reached Gripping Target'
         elif going_to_starting_position:
+            self.flag_close_to_object = False
             return 'Reached Staring Position'
         else:
             pass           
@@ -308,14 +304,14 @@ class Grip_Object(smach.State):
         msg_string = String()
         msg_string.data = action
         self.pub_gripper.publish(msg_string)
-        rospy.sleep(2)
+        rospy.sleep(0.5)
 
     def send_gripped_message(self):
         #rospy.sleep(2)
         msg_string = String()
         msg_string.data = "gripped"
         self.pub_gripped.publish(msg_string)
-        rospy.sleep(2)
+        rospy.sleep(0.5)
 
     def execute(self, userdata):
         rospy.loginfo('Executing state Grip_Object')
@@ -369,14 +365,14 @@ class Release_Object(smach.State):
             vel.angular.x = 0.0
             vel.angular.y = 0.0
         
-            # rotate
+            # back
             vel.angular.z = 0.0
             self.pub_vel.publish(vel)
-            rospy.loginfo('Rotating')
+            rospy.loginfo('Going Back')
             rospy.sleep(4)
-            rospy.loginfo('Rotate Finished')
+            rospy.loginfo('Back Finished')
             # stop
-            vel.angular.z = 0.0
+            vel.linear.x = 0.0
             self.pub_vel.publish(vel)
 
     def execute(self, userdata):
